@@ -15,48 +15,50 @@ fn main() {
     let mut clients = vec![];
     let (tx, rx) = mpsc::channel::<String>();
 
-    if let Ok((mut socket, address)) = server.accept() {
-        println!("Client {address} connected");
-        let tx = tx.clone();
+    loop {
+        if let Ok((mut socket, address)) = server.accept() {
+            println!("Client {address} connected");
+            let tx = tx.clone();
 
-        clients.push(socket.try_clone().expect("failed to clone client"));
+            clients.push(socket.try_clone().expect("failed to clone client"));
 
-        thread::spawn(move || loop {
-            let mut buff = vec![0; MSG_SIZE];
+            thread::spawn(move || loop {
+                let mut buff = vec![0; MSG_SIZE];
 
-            match socket.read_exact(&mut buff) {
-                Ok(_) => {
-                    let msg = buff
-                        .into_iter()
-                        .take_while(|&x| x != 0)
-                        .collect::<Vec<_>>();
-                    let msg = String::from_utf8(msg)
-                        .expect("Invalid UTF-8 message");
+                match socket.read_exact(&mut buff) {
+                    Ok(_) => {
+                        let msg = buff
+                            .into_iter()
+                            .take_while(|&x| x != 0)
+                            .collect::<Vec<_>>();
+                        let msg = String::from_utf8(msg)
+                            .expect("Invalid UTF-8 message");
 
-                    println!("{address}: {msg:?}");
-                    tx.send(msg).expect("failed to send msg to rx");
-                },
-                Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
-                Err(_) => {
-                    println!("closing connection with: {address}");
-                    break;
-                },
-            }
+                        println!("{address}: {msg:?}");
+                        tx.send(msg).expect("failed to send msg to rx");
+                    },
+                    Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
+                    Err(_) => {
+                        println!("closing connection with: {address}");
+                        break;
+                    },
+                }
 
-            sleep();
-        });
+                sleep();
+            });
+        }
+
+        if let Ok(msg) = rx.try_recv() {
+            clients = clients.into_iter().filter_map(|mut client| {
+                let mut buff = msg.clone().into_bytes();
+                buff.resize(MSG_SIZE, 0);
+
+                client.write_all(&buff).map(|_| client).ok()
+            }).collect::<Vec<_>>();
+        }
+
+        sleep();
     }
-
-    if let Ok(msg) = rx.try_recv() {
-        clients = clients.into_iter().filter_map(|mut client| {
-            let mut buff = msg.clone().into_bytes();
-            buff.resize(MSG_SIZE, 0);
-
-            client.write_all(&buff).map(|_| client).ok()
-        }).collect::<Vec<_>>();
-    }
-
-    sleep();
 }
 
 fn sleep() {
