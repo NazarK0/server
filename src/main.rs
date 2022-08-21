@@ -48,9 +48,10 @@ fn main() {
         sleep();
     });
 
-    print!("Write a message:");
+
 
     loop {
+        print!("Write a message:");
         let  mut  buff = String::new();
         io::stdin().read_line(&mut buff).expect("reading from stdin failed");
         let msg = buff.trim().to_string();
