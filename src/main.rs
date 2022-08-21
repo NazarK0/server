@@ -24,11 +24,11 @@ fn main() {
                     .into_iter()
                     .take_while(|&x| x != 0)
                     .collect::<Vec<_>>();
-                print!("message recv {msg:?}");
+                println!("message recv {msg:?}");
             },
             Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
             Err(_) => {
-                print!("connection with server was severed");
+                println!("connection with server was severed");
                 break;
             }
         }
@@ -39,7 +39,7 @@ fn main() {
 
                 buff.resize(MSG_SIZE, 0);
                 client.write_all(&buff).expect("writing to socket failed");
-                print!("message sent {msg:?}");
+                println!("message sent {msg:?}");
             },
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => break,
@@ -49,9 +49,9 @@ fn main() {
     });
 
 
+    println!("Write messages:");
 
     loop {
-        print!("Write a message:");
         let  mut  buff = String::new();
         io::stdin().read_line(&mut buff).expect("reading from stdin failed");
         let msg = buff.trim().to_string();
