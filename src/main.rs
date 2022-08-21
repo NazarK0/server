@@ -1,6 +1,6 @@
-use std::io::{self, ErrorKind, Read, Write};
-use std::net::TcpStream;
-use std::sync::mpsc::{self, TryRecvError};
+use std::io::{ErrorKind, Read, Write};
+use std::net::TcpListener;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -8,57 +8,57 @@ const LOCAL: &str = "127.0.0.1:6000";
 const MSG_SIZE: usize = 32;
 
 fn main() {
-    let mut client = TcpStream::connect(LOCAL)
-        .expect("stream failed to connect");
+    let server = TcpListener::bind(LOCAL).expect("Listener failed to bind");
 
-    client.set_nonblocking(true).expect("failed to initiate non-blocking");
+    server.set_nonblocking(true).expect("failed to initialize non-blocking");
 
+    let mut clients = vec![];
     let (tx, rx) = mpsc::channel::<String>();
 
-    thread::spawn(move || loop {
-        let mut buff = vec![0; MSG_SIZE];
+    loop {
+        if let Ok((mut socket, address)) = server.accept() {
+            println!("Client {address} connected");
+            let tx = tx.clone();
 
-        match client.read_exact(&mut buff) {
-            Ok(_) => {
-                let msg = buff
-                    .into_iter()
-                    .take_while(|&x| x != 0)
-                    .collect::<Vec<_>>();
-                print!("message recv {msg:?}");
-            },
-            Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
-            Err(_) => {
-                print!("connection with server was severed");
-                break;
-            }
+            clients.push(socket.try_clone().expect("failed to clone client"));
+
+            thread::spawn(move || loop {
+                let mut buff = vec![0; MSG_SIZE];
+
+                match socket.read_exact(&mut buff) {
+                    Ok(_) => {
+                        let msg = buff
+                            .into_iter()
+                            .take_while(|&x| x != 0)
+                            .collect::<Vec<_>>();
+                        let msg = String::from_utf8(msg)
+                            .expect("Invalid UTF-8 message");
+
+                        println!("{address}: {msg:?}");
+                        tx.send(msg).expect("failed to send msg to rx");
+                    },
+                    Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
+                    Err(_) => {
+                        println!("closing connection with: {address}");
+                        break;
+                    },
+                }
+
+                sleep();
+            });
         }
 
-        match rx.try_recv() {
-            Ok(msg) => {
+        if let Ok(msg) = rx.try_recv() {
+            clients = clients.into_iter().filter_map(|mut client| {
                 let mut buff = msg.clone().into_bytes();
-
                 buff.resize(MSG_SIZE, 0);
-                client.write_all(&buff).expect("writing to socket failed");
-                print!("message sent {msg:?}");
-            },
-            Err(TryRecvError::Empty) => (),
-            Err(TryRecvError::Disconnected) => break,
+
+                client.write_all(&buff).map(|_| client).ok()
+            }).collect::<Vec<_>>();
         }
 
         sleep();
-    });
-
-    print!("Write a message:");
-
-    loop {
-        let  mut  buff = String::new();
-        io::stdin().read_line(&mut buff).expect("reading from stdin failed");
-        let msg = buff.trim().to_string();
-
-        if msg == ":quit" || tx.send(msg).is_err() { break }
     }
-
-    println!("Bye, bye!");
 }
 
 fn sleep() {
